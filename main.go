@@ -45,23 +45,55 @@ type model struct {
 
 	tasks       []task
 	currentTask task
-	error       string
+
+	autoPause bool
+
+	error string
 }
 
 func initialModel() model {
 	return model{
-		paused: false,
+		autoPause: true,
+		paused:    false,
 		tasks: []task{
 			{
-				name:     "code",
-				duration: time.Minute * 45,
+				name:     "test",
+				duration: time.Second * 5,
 			},
 			{
-				name:     "stare at wall",
-				duration: time.Second * 13,
+				name:     "Math",
+				duration: time.Minute * 25,
 			},
 			{
-				name:     "read",
+				name:     "Math Break",
+				duration: time.Minute * 5,
+			},
+			{
+				name:     "Math",
+				duration: time.Minute * 25,
+			},
+			{
+				name:     "Math Break",
+				duration: time.Minute * 5,
+			},
+			{
+				name:     "Math",
+				duration: time.Minute * 25,
+			},
+			{
+				name:     "Math Break",
+				duration: time.Minute * 5,
+			},
+			{
+				name:     "Math",
+				duration: time.Minute * 25,
+			},
+			{
+				name:     "Math Break",
+				duration: time.Minute * 5,
+			},
+			{
+				name:     "watch stuff...",
 				duration: time.Minute * 25,
 			},
 		},
@@ -106,7 +138,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.decTimer = m.currentTask.duration - m.incTimer
 		if m.decTimer < 0 {
-			return m, Cmd(nextTaskMsg{})
+			notify := exec.Cmd{
+				Path: "/usr/bin/notify-send",
+				Args: []string{"notify-send", "Task Complete", fmt.Sprintf("Completed task: \"%s\"", m.currentTask.name)},
+			}
+			err := notify.Run()
+			if err != nil {
+				m.error = err.Error()
+				return m, tea.Quit
+			}
+
+			sound := exec.Cmd{
+				Path: "/usr/bin/ffplay",
+				Args: []string{
+					"ffplay",
+					"-loglevel",
+					"8",
+					"-nodisp",
+					"-loop",
+					"2",
+					"-autoexit",
+					"./assets/notif.mp3",
+				},
+			}
+			err = sound.Start()
+			if err != nil {
+				m.error = err.Error()
+				return m, tea.Quit
+			}
+
+			return m, tea.Sequence(Cmd(nextTaskMsg{}), tick())
 		}
 		return m, tick()
 	case pauseMsg:
@@ -116,15 +177,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case nextTaskMsg:
-		if m.currentTask != (task{}) {
-			notify := exec.Cmd{Path: "/usr/bin/notify-send", Args: []string{"Task Complete", fmt.Sprintf("Completed task: \"%s\"", m.currentTask.name)}}
-			err := notify.Run()
-			if err != nil {
-				m.error = err.Error()
-				return m, tea.Quit
-			}
-		}
-
 		if len(m.tasks) != 0 {
 			m.currentTask, m.tasks = m.tasks[0], m.tasks[1:]
 		} else {
@@ -132,6 +184,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m = m.resetTimer()
+		if m.autoPause {
+			return m, Cmd(pauseMsg{})
+		}
 		return m, nil
 	}
 	return m, nil
@@ -140,7 +195,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	s := fmt.Sprintf("Elapsed Time: %s\n", m.decTimer.Truncate(time.Second))
 	s += fmt.Sprintf("Paused: %t\n", m.paused)
-	s += fmt.Sprintf("Current Task: %s for %s\n", m.currentTask.name, m.currentTask.duration.Truncate(time.Second))
+	s += fmt.Sprintf(
+		"Current Task: %s for %s\n",
+		m.currentTask.name,
+		m.currentTask.duration.Truncate(time.Second),
+	)
 	s += "Tasks:\n"
 	for i, task := range m.tasks {
 		s += fmt.Sprintf("    %d. %s - %s\n", i+1, task.name, task.duration.Truncate(time.Second))
